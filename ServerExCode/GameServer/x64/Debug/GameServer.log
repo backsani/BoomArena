@@ -1,0 +1,256 @@
+﻿  #pragma once
+  #include "Protocol.pb.h"
+  
+  using PacketHandlerFunc = std::function<bool(PacketSessionRef&, BYTE*, int32)>;
+  extern PacketHandlerFunc GPacketHandler[UINT16_MAX];
+  
+  enum : uint16
+  {
+  	PKT_C_LOGIN = 1000,
+  	PKT_C_MOVE = 1001,
+  	PKT_C_ROOM_DATA = 1002,
+  	PKT_C_ROOM_REQUEST = 1003,
+  	PKT_C_ATTACK = 1004,
+  	PKT_C_RTT_PING = 1005,
+  	PKT_S_RTT_PONG = 1006,
+  	PKT_S_LOGIN = 1007,
+  	PKT_S_ROOM_DATA = 1008,
+  	PKT_S_ROOM_RESPONSE = 1009,
+  	PKT_S_MOVE = 1010,
+  	PKT_S_OBJECT_SPAWN = 1011,
+  	PKT_S_OBJECT_DEAD = 1012,
+  	PKT_S_OBJECT_DAMAGE = 1013,
+  };
+  
+  // Custom Handlers
+  bool Handle_INVALID(PacketSessionRef& session, BYTE* buffer, int32 len);
+  bool Handle_C_LOGIN(PacketSessionRef& session, Protocol::C_LOGIN& pkt);
+  bool Handle_C_MOVE(PacketSessionRef& session, Protocol::C_MOVE& pkt);
+  bool Handle_C_ROOM_DATA(PacketSessionRef& session, Protocol::C_ROOM_DATA& pkt);
+  bool Handle_C_ROOM_REQUEST(PacketSessionRef& session, Protocol::C_ROOM_REQUEST& pkt);
+  bool Handle_C_ATTACK(PacketSessionRef& session, Protocol::C_ATTACK& pkt);
+  bool Handle_C_RTT_PING(PacketSessionRef& session, Protocol::C_RTT_PING& pkt);
+  
+  class ClientPacketHandler
+  {
+  public:
+  	static void Init()
+  	{
+  		for (int32 i = 0; i < UINT16_MAX; i++)
+  			GPacketHandler[i] = Handle_INVALID;
+  		GPacketHandler[PKT_C_LOGIN] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_LOGIN>(Handle_C_LOGIN, session, buffer, len); };
+  		GPacketHandler[PKT_C_MOVE] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_MOVE>(Handle_C_MOVE, session, buffer, len); };
+  		GPacketHandler[PKT_C_ROOM_DATA] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_ROOM_DATA>(Handle_C_ROOM_DATA, session, buffer, len); };
+  		GPacketHandler[PKT_C_ROOM_REQUEST] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_ROOM_REQUEST>(Handle_C_ROOM_REQUEST, session, buffer, len); };
+  		GPacketHandler[PKT_C_ATTACK] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_ATTACK>(Handle_C_ATTACK, session, buffer, len); };
+  		GPacketHandler[PKT_C_RTT_PING] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::C_RTT_PING>(Handle_C_RTT_PING, session, buffer, len); };
+  	}
+  
+  	static bool HandlePacket(PacketSessionRef& session, BYTE* buffer, int32 len)
+  	{
+  		PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+  		return GPacketHandler[header->id](session, buffer, len);
+  	}
+  	static SendBufferRef MakeSendBuffer(Protocol::S_RTT_PONG& pkt) { return MakeSendBuffer(pkt, PKT_S_RTT_PONG); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_LOGIN& pkt) { return MakeSendBuffer(pkt, PKT_S_LOGIN); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_ROOM_DATA& pkt) { return MakeSendBuffer(pkt, PKT_S_ROOM_DATA); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_ROOM_RESPONSE& pkt) { return MakeSendBuffer(pkt, PKT_S_ROOM_RESPONSE); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_MOVE& pkt) { return MakeSendBuffer(pkt, PKT_S_MOVE); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_OBJECT_SPAWN& pkt) { return MakeSendBuffer(pkt, PKT_S_OBJECT_SPAWN); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_OBJECT_DEAD& pkt) { return MakeSendBuffer(pkt, PKT_S_OBJECT_DEAD); }
+  	static SendBufferRef MakeSendBuffer(Protocol::S_OBJECT_DAMAGE& pkt) { return MakeSendBuffer(pkt, PKT_S_OBJECT_DAMAGE); }
+  
+  private:
+  	template<typename PacketType, typename ProcessFunc>
+  	static bool HandlePacket(ProcessFunc func, PacketSessionRef& session, BYTE* buffer, int32 len)
+  	{
+  		PacketType pkt;
+  		if (pkt.ParseFromArray(buffer + sizeof(PacketHeader), len - sizeof(PacketHeader)) == false)
+  			return false;
+  
+  		return func(session, pkt);
+  	}
+  
+  	template<typename T>
+  	static SendBufferRef MakeSendBuffer(T& pkt, uint16 pktId)
+  	{
+  		const uint16 dataSize = static_cast<uint16>(pkt.ByteSizeLong());
+  		const uint16 packetSize = dataSize + sizeof(PacketHeader);
+  
+  		SendBufferRef sendBuffer = GSendBufferManager->Open(packetSize);
+  		PacketHeader* header = reinterpret_cast<PacketHeader*>(sendBuffer->Buffer());
+  		header->size = packetSize;
+  		header->id = pktId;
+  		ASSERT_CRASH(pkt.SerializeToArray(&header[1], dataSize));
+  		sendBuffer->Close(packetSize);
+  
+  		return sendBuffer;
+  	}
+  };
+  #pragma once
+  #include "Protocol.pb.h"
+  
+  using PacketHandlerFunc = std::function<bool(PacketSessionRef&, BYTE*, int32)>;
+  extern PacketHandlerFunc GPacketHandler[UINT16_MAX];
+  
+  enum : uint16
+  {
+  	PKT_C_LOGIN = 1000,
+  	PKT_C_MOVE = 1001,
+  	PKT_C_ROOM_DATA = 1002,
+  	PKT_C_ROOM_REQUEST = 1003,
+  	PKT_C_ATTACK = 1004,
+  	PKT_C_RTT_PING = 1005,
+  	PKT_S_RTT_PONG = 1006,
+  	PKT_S_LOGIN = 1007,
+  	PKT_S_ROOM_DATA = 1008,
+  	PKT_S_ROOM_RESPONSE = 1009,
+  	PKT_S_MOVE = 1010,
+  	PKT_S_OBJECT_SPAWN = 1011,
+  	PKT_S_OBJECT_DEAD = 1012,
+  	PKT_S_OBJECT_DAMAGE = 1013,
+  };
+  
+  // Custom Handlers
+  bool Handle_INVALID(PacketSessionRef& session, BYTE* buffer, int32 len);
+  bool Handle_S_RTT_PONG(PacketSessionRef& session, Protocol::S_RTT_PONG& pkt);
+  bool Handle_S_LOGIN(PacketSessionRef& session, Protocol::S_LOGIN& pkt);
+  bool Handle_S_ROOM_DATA(PacketSessionRef& session, Protocol::S_ROOM_DATA& pkt);
+  bool Handle_S_ROOM_RESPONSE(PacketSessionRef& session, Protocol::S_ROOM_RESPONSE& pkt);
+  bool Handle_S_MOVE(PacketSessionRef& session, Protocol::S_MOVE& pkt);
+  bool Handle_S_OBJECT_SPAWN(PacketSessionRef& session, Protocol::S_OBJECT_SPAWN& pkt);
+  bool Handle_S_OBJECT_DEAD(PacketSessionRef& session, Protocol::S_OBJECT_DEAD& pkt);
+  bool Handle_S_OBJECT_DAMAGE(PacketSessionRef& session, Protocol::S_OBJECT_DAMAGE& pkt);
+  
+  class ServerPacketHandler
+  {
+  public:
+  	static void Init()
+  	{
+  		for (int32 i = 0; i < UINT16_MAX; i++)
+  			GPacketHandler[i] = Handle_INVALID;
+  		GPacketHandler[PKT_S_RTT_PONG] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_RTT_PONG>(Handle_S_RTT_PONG, session, buffer, len); };
+  		GPacketHandler[PKT_S_LOGIN] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_LOGIN>(Handle_S_LOGIN, session, buffer, len); };
+  		GPacketHandler[PKT_S_ROOM_DATA] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_ROOM_DATA>(Handle_S_ROOM_DATA, session, buffer, len); };
+  		GPacketHandler[PKT_S_ROOM_RESPONSE] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_ROOM_RESPONSE>(Handle_S_ROOM_RESPONSE, session, buffer, len); };
+  		GPacketHandler[PKT_S_MOVE] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_MOVE>(Handle_S_MOVE, session, buffer, len); };
+  		GPacketHandler[PKT_S_OBJECT_SPAWN] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_OBJECT_SPAWN>(Handle_S_OBJECT_SPAWN, session, buffer, len); };
+  		GPacketHandler[PKT_S_OBJECT_DEAD] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_OBJECT_DEAD>(Handle_S_OBJECT_DEAD, session, buffer, len); };
+  		GPacketHandler[PKT_S_OBJECT_DAMAGE] = [](PacketSessionRef& session, BYTE* buffer, int32 len) { return HandlePacket<Protocol::S_OBJECT_DAMAGE>(Handle_S_OBJECT_DAMAGE, session, buffer, len); };
+  	}
+  
+  	static bool HandlePacket(PacketSessionRef& session, BYTE* buffer, int32 len)
+  	{
+  		PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
+  		return GPacketHandler[header->id](session, buffer, len);
+  	}
+  	static SendBufferRef MakeSendBuffer(Protocol::C_LOGIN& pkt) { return MakeSendBuffer(pkt, PKT_C_LOGIN); }
+  	static SendBufferRef MakeSendBuffer(Protocol::C_MOVE& pkt) { return MakeSendBuffer(pkt, PKT_C_MOVE); }
+  	static SendBufferRef MakeSendBuffer(Protocol::C_ROOM_DATA& pkt) { return MakeSendBuffer(pkt, PKT_C_ROOM_DATA); }
+  	static SendBufferRef MakeSendBuffer(Protocol::C_ROOM_REQUEST& pkt) { return MakeSendBuffer(pkt, PKT_C_ROOM_REQUEST); }
+  	static SendBufferRef MakeSendBuffer(Protocol::C_ATTACK& pkt) { return MakeSendBuffer(pkt, PKT_C_ATTACK); }
+  	static SendBufferRef MakeSendBuffer(Protocol::C_RTT_PING& pkt) { return MakeSendBuffer(pkt, PKT_C_RTT_PING); }
+  
+  private:
+  	template<typename PacketType, typename ProcessFunc>
+  	static bool HandlePacket(ProcessFunc func, PacketSessionRef& session, BYTE* buffer, int32 len)
+  	{
+  		PacketType pkt;
+  		if (pkt.ParseFromArray(buffer + sizeof(PacketHeader), len - sizeof(PacketHeader)) == false)
+  			return false;
+  
+  		return func(session, pkt);
+  	}
+  
+  	template<typename T>
+  	static SendBufferRef MakeSendBuffer(T& pkt, uint16 pktId)
+  	{
+  		const uint16 dataSize = static_cast<uint16>(pkt.ByteSizeLong());
+  		const uint16 packetSize = dataSize + sizeof(PacketHeader);
+  
+  		SendBufferRef sendBuffer = GSendBufferManager->Open(packetSize);
+  		PacketHeader* header = reinterpret_cast<PacketHeader*>(sendBuffer->Buffer());
+  		header->size = packetSize;
+  		header->id = pktId;
+  		ASSERT_CRASH(pkt.SerializeToArray(&header[1], dataSize));
+  		sendBuffer->Close(packetSize);
+  
+  		return sendBuffer;
+  	}
+  };
+  C:Enum.pb.h
+  1개 파일이 복사되었습니다.
+  C:Enum.pb.cc
+  1개 파일이 복사되었습니다.
+  C:Struct.pb.h
+  1개 파일이 복사되었습니다.
+  C:Struct.pb.cc
+  1개 파일이 복사되었습니다.
+  C:Protocol.pb.h
+  1개 파일이 복사되었습니다.
+  C:Protocol.pb.cc
+  1개 파일이 복사되었습니다.
+  C:ClientPacketHandler.h
+  1개 파일이 복사되었습니다.
+  C:Enum.cs
+  1개 파일이 복사되었습니다.
+  C:Struct.cs
+  1개 파일이 복사되었습니다.
+  C:Protocol.cs
+  1개 파일이 복사되었습니다.
+  계속하려면 아무 키나 누르십시오 . . . 
+  Enum.pb.cc
+  Protocol.pb.cc
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Protocol.pb.cc(676,70): warning C4244: '=': 'google::protobuf::uint64'에서 'google::protobuf::int32'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Protocol.pb.cc(1133,70): warning C4244: '=': 'google::protobuf::uint64'에서 'google::protobuf::int32'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Protocol.pb.cc(1351,70): warning C4244: '=': 'google::protobuf::uint64'에서 'google::protobuf::int32'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Protocol.pb.cc(2474,70): warning C4244: '=': 'google::protobuf::uint64'에서 'google::protobuf::int32'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+  Struct.pb.cc
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Struct.pb.cc(491,70): warning C4244: '=': 'google::protobuf::uint64'에서 'google::protobuf::int32'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+  코드를 생성하고 있습니다...
+  ClientPacketHandler.cpp
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\ClientPacketHandler.cpp(27,65): warning C4244: '인수': 'google::protobuf::uint64'에서 'const int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+  (소스 파일 '/ClientPacketHandler.cpp'을(를) 컴파일하는 중)
+  
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\ClientPacketHandler.cpp(29,64): warning C4244: '인수': 'google::protobuf::uint64'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+  (소스 파일 '/ClientPacketHandler.cpp'을(를) 컴파일하는 중)
+  
+  GameObject.cpp
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\GameObject.cpp(181,13): warning C4244: '=': 'float'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+  (소스 파일 '/GameObject.cpp'을(를) 컴파일하는 중)
+  
+  GameServer.cpp
+  GameSession.cpp
+  Room.cpp
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31): warning C4244: '인수': '_Ty'에서 'float'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31): warning C4244:         with
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31): warning C4244:         [
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31): warning C4244:             _Ty=int32
+C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31): warning C4244:         ]
+  (소스 파일 '/Room.cpp'을(를) 컴파일하는 중)
+      C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(39,31):
+      템플릿 인스턴스화 컨텍스트(가장 오래된 인스턴스화 컨텍스트)가
+          C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\GameServer\Room.cpp(13,9):
+          컴파일되는 함수 템플릿 인스턴스화 'std::shared_ptr<GridManager> MakeShared<GridManager,int,int,int,int>(int &&,int &&,int &&,int &&)'에 대한 참조를 확인하세요.
+          C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\ServerCore\Memory.h(53,27):
+          컴파일되는 함수 템플릿 인스턴스화 'Type *xnew<GridManager,_Ty,_Ty,_Ty,_Ty>(_Ty &&,_Ty &&,_Ty &&,_Ty &&)'에 대한 참조를 확인하세요.
+          with
+          [
+              Type=GridManager,
+              _Ty=int32
+          ]
+  
+  코드를 생성하고 있습니다...
+  LINK : 이전 연결 이후로 0개의 새 모듈과 8개(전체 83개 중)의 모듈이 변경되었습니다.
+  Pass 2를 시작하고 있습니다.
+       Struct.pb.obj
+       Room.obj
+       ClientPacketHandler.obj
+       Protocol.pb.obj
+       GameSession.obj
+       GameServer.obj
+       GameObject.obj
+       Enum.pb.obj
+       MSVCRTD.lib(loadcfg.obj)
+  Pass 2가 끝났습니다.
+  GameServer.vcxproj -> C:\Users\hj577\Desktop\TankIOServerClient\ServerExCode\Binary\Debug\GameServer.exe
